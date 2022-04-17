@@ -3,6 +3,8 @@
 #include <time.h>
 #include <math.h>
 
+#define LearningRate 0.05
+
 typedef struct Neuron
 {
     int neuronIndex;
@@ -14,6 +16,8 @@ typedef struct Neuron
 
     double** inWeights;
     int iWLength;
+
+    double delta;
 }Neuron;
 typedef struct Layer
 {
@@ -40,17 +44,13 @@ typedef struct Result
     int equalCases;
 }Result;
 
-double sigmoid1(double* input)
+double sigmoid(double* input)
 {
-    double newValue = (1)/(1+exp(-*input));
+    double newValue = (1)/(1+exp((-1)*(*input)));
     *input = newValue;
     return newValue;
 }
-double sigmoid(double* input)
-{
-    return *input;
-}
-double random()
+double randome()
 {
 	return (rand() % RAND_MAX) / (double)RAND_MAX;
 }
@@ -90,7 +90,7 @@ int zeroNetwork(Network* network)
         {
             previousLayer = &network->layers[i-1];
         }
-        currentLayer->layerBias = random();
+        currentLayer->layerBias = randome();
         for (int i1 = 0; i1 < currentLayer->nLength; i1++)
         {
             Neuron* currentNode = &currentLayer->Neurons[i1];
@@ -99,7 +99,7 @@ int zeroNetwork(Network* network)
             {
                 for (int i2 = 0; i2 < currentNode->oWLength; i2++)
                 {
-                    currentNode->outWeights[i2] = random();
+                    currentNode->outWeights[i2] = randome();
                 }
             }
             if(!currentLayer->isFirstLayer)
@@ -111,6 +111,7 @@ int zeroNetwork(Network* network)
             }
         }
     }
+    return 0;
 }
 
 int init(Network* network,int* model)
@@ -140,7 +141,7 @@ int init(Network* network,int* model)
         {
             currentLayer->isLastLayer = 1;
         }
-        currentLayer->layerBias = random();
+        currentLayer->layerBias = randome();
         currentLayer->nLength = model[i];
         currentLayer->Neurons = malloc(sizeof(Neuron)*currentLayer->nLength);
 
@@ -154,9 +155,10 @@ int init(Network* network,int* model)
             {
                 currentNode->outWeights = malloc(sizeof(double)*model[i+1]);
                 currentNode->oWLength = model[i+1];
+                printf("%d\n",currentNode->oWLength);                
                 for (int i2 = 0; i2 < model[i+1]; i2++)
                 {
-                    currentNode->outWeights[i2] = random();
+                    currentNode->outWeights[i2] = randome();
                 }
             }
             if(!currentLayer->isFirstLayer)
@@ -173,38 +175,40 @@ int init(Network* network,int* model)
             
         }
     }
+    return 0;
 }
-Result forwardPass(Network* network,double* inputs)
+Result* forwardPass(Network* network,double* inputs)
 {
     for (int i = 0; i < network->lLength; i++)
     {
         Layer* currentLayer = &network->layers[i];
         Layer* previousLayer = &network->layers[i-1];
-
         for (int i1 = 0; i1 < currentLayer->nLength; i1++)
         {
             Neuron* currentNode = &currentLayer->Neurons[i1];
+            
             if(i == 0)
             {
                 currentNode->input = inputs[i1];
                 continue;
             }
+            currentNode->input = 0;
             for (int i2 = 0; i2 < previousLayer->nLength; i2++)
             {
                 Neuron* previousNeuron = &previousLayer->Neurons[i2];
-                currentNode->input += previousNeuron->input*previousNeuron->outWeights[i1];
+                currentNode->input +=  previousNeuron->input*previousNeuron->outWeights[i1];
             }
             currentNode->input += currentLayer->layerBias;
             sigmoid(&currentNode->input);
         }
     }
-
-    Result result;
-    result.equalCases = 0;
+    
+    Result* result = malloc(sizeof(result));
+    result->equalCases = 0;
     if(network->lastLayer->nLength == 1)
     {
-        result.winningIndex = 0;
-        result.outputs = &network->lastLayer->Neurons[0].input;
+        result->winningIndex = 0;
+        result->outputs = &network->lastLayer->Neurons[0].input;
         return result;
     }
     double outputs[network->lastLayer->nLength];
@@ -222,17 +226,52 @@ Result forwardPass(Network* network,double* inputs)
         {
             if(network->lastLayer->Neurons[i].input == highscore)
             {
-                result.equalCases++;
+                result->equalCases++;
             }
         }
     }
-    result.winningIndex = index;
-    result.outputs = outputs;
+    result->winningIndex = index;
+    result->outputs = outputs;
+
     return result;
 }
-int backwardPass()
+double backwardPass(Network* network, double* desired)
 {
+    double totalOutut = 0;
+    
+    for (int i = 0; i < network->layers[network->lLength-1].nLength; i++)
+    {
+        totalOutut += pow((desired[i] - network->layers[network->lLength-1].Neurons[i].input) * 0.5,2);
+        totalOutut /= network->layers[network->lLength-1].nLength;
+        //network->layers[network->lLength-1].Neurons[i1].delta = 1;
+    }
 
+    for (int i = network->lLength-1; i >= 0; i--)//Will go to first and last layer
+    {
+        for (int i1 = 0; i1 < network->layers[i].nLength; i1++)
+        {
+            double V1 = 1;
+            double V2 = 1;
+            if(network->layers[i].isLastLayer)
+            {
+                V1 = -1*(desired[i1] - network->layers[i].Neurons[i1].input);
+                V2 = network->layers[i].Neurons[i1].input * (1-network->layers[i].Neurons[i1].input);
+            }
+            for(int i2 = 0; i2 < network->layers[i].Neurons[i1].iWLength;i2++)
+            {
+                if(network->layers[i].isLastLayer)
+                {
+                    double V3 = 1 * network->layers[i-1].Neurons[i2].input * 1;
+                    double editV = V1 * V2 * V3; 
+                    *network->layers[i].Neurons[i1].inWeights[i2] -= (LearningRate * editV);
+                }
+            }
+            
+        }
+    }
+    
+
+    return totalOutut;
 }
 int dumpNetwork(Network* network)
 {
@@ -241,20 +280,19 @@ int dumpNetwork(Network* network)
         printf("Layer %d:\n",i);
         for (int i1 = 0; i1 < network->layers[i].nLength; i1++)
         {
-            printf("  Neuron[%d] %lf:\n",i1,network->layers[i].Neurons[i1].input);
+            printf("  Neuron[%d] %lf & %lf:\n",i1,network->layers[i].Neurons[i1].input,network->layers[i].Neurons[i1].delta);
             for (int i2 = 0; i2 < network->layers[i].Neurons[i1].oWLength; i2++)
             {
-                printf("   Weight[%d] %lf:\n",i2,network->layers[i].Neurons[i1].outWeights[i2]);
+                printf("    Weight[%d] %lf:\n",i2,network->layers[i].Neurons[i1].outWeights[i2]);
             }
         }
     }
+    return 0;
 }
 
 
 int isForwardWorks(Network* network)
 {
-    int model[] = {2,2,1,-1};
-    init(network,model);
     double inputs[] = {2,3};
     for (int i = 0; i < network->lLength; i++)
     {
@@ -286,13 +324,29 @@ int isForwardWorks(Network* network)
             }
         }
     }
-    Result r = forwardPass(network,inputs);
-    printf("%lf\n",r.outputs[r.winningIndex]);
-    if(r.outputs[r.winningIndex] == 0.191)
+    Result* r = forwardPass(network,inputs);
+    printf("%lf\n",r->outputs[r->winningIndex]);
+    if(r->outputs[r->winningIndex] == 0.191)
     {
         return 1;
     }else
     {
         return 0;
     }
+}
+
+void trainNetwork(Network* network, double inputs[4][2],double desired[4][1],int epoch,int dataIndexes)
+{
+    for (int i = 1; i < epoch+1; i++)
+    {
+        for (int i1 = 0; i1 < dataIndexes; i1++)
+        {
+            Result* r = forwardPass(network,inputs[i1]);
+            //printf("Result[%d]%lf\n",((i-1)*dataIndexes)+i1,r->outputs[r->winningIndex]); 
+            backwardPass(network,desired[i1]);
+            double error = (*(desired[i1]))-(r->outputs[r->winningIndex]);
+            //printf("  Error: %lf\n",error);
+        }
+    }
+    return;
 }
